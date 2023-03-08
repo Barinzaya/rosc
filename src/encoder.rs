@@ -171,11 +171,16 @@ fn encode_arg(arg: &OscType) -> Result<(Option<Vec<u8>>, String)> {
 /// multiple of 4.
 pub fn encode_string<S: Into<String>>(s: S) -> Vec<u8> {
     let mut bytes: Vec<u8> = s.into().into_bytes();
-    bytes.push(0u8);
-    pad_bytes(&mut bytes);
+
+    let new_len = pad(bytes.len() as u64 + 1) as usize;
+    bytes.resize(new_len, 0u8);
+
     bytes
 }
 
+/// Appends the given string `s` to the given Vec `out`,
+/// adding 1-4 null bytes such that the length of the result
+/// is a multiple of 4.
 pub fn encode_string_into<S: AsRef<str>>(s: S, out: &mut Vec<u8>) {
     let s = s.as_ref();
 
@@ -185,13 +190,6 @@ pub fn encode_string_into<S: AsRef<str>>(s: S, out: &mut Vec<u8>) {
     let new_len = out.len() + padded_len;
     out.extend(s.as_bytes());
     out.resize(new_len, 0u8);
-}
-
-fn pad_bytes(bytes: &mut Vec<u8>) {
-    let padded_lengh = pad(bytes.len() as u64);
-    while bytes.len() < padded_lengh as usize {
-        bytes.push(0u8)
-    }
 }
 
 /// Returns the position padded to 4 bytes.
