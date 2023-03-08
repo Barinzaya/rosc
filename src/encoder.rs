@@ -75,15 +75,15 @@ fn encode_bundle(bundle: &OscBundle) -> Result<Vec<u8>> {
         match *packet {
             OscPacket::Message(ref m) => {
                 let msg = encode_message(m)?;
-                let mut msg_size = vec![0u8; 4];
+                let mut msg_size = [0u8; 4];
                 BigEndian::write_u32(&mut msg_size, msg.len() as u32);
-                bundle_bytes.extend(msg_size.into_iter().chain(msg.into_iter()));
+                bundle_bytes.extend(msg_size.iter().copied().chain(msg.into_iter()));
             }
             OscPacket::Bundle(ref b) => {
                 let bdl = encode_bundle(b)?;
-                let mut bdl_size = vec![0u8; 4];
+                let mut bdl_size = [0u8; 4];
                 BigEndian::write_u32(&mut bdl_size, bdl.len() as u32);
-                bundle_bytes.extend(bdl_size.into_iter().chain(bdl.into_iter()));
+                bundle_bytes.extend(bdl_size.iter().copied().chain(bdl.into_iter()));
             }
         }
     }
