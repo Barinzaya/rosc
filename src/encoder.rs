@@ -2,7 +2,7 @@ use crate::alloc::{
     string::String,
     vec::Vec,
 };
-use crate::types::{OscBundle, OscMessage, OscPacket, OscTime, OscType, Result};
+use crate::types::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 
 /// Takes a reference to an OSC packet and returns
 /// a byte vector on success. If the packet was invalid
@@ -21,193 +21,129 @@ use crate::types::{OscBundle, OscMessage, OscPacket, OscTime, OscType, Result};
 /// );
 /// assert!(encoder::encode(&packet).is_ok())
 /// ```
-pub fn encode(packet: &OscPacket) -> Result<Vec<u8>> {
+pub fn encode(packet: &OscPacket) -> crate::types::Result<Vec<u8>> {
     let mut bytes = Vec::new();
-    encode_into(packet, &mut bytes)?;
+    let _ = encode_into(packet, &mut bytes);
     Ok(bytes)
 }
 
-pub fn encode_into(packet: &OscPacket, out: &mut Vec<u8>) -> Result<()> {
+pub fn encode_into<O: Output>(packet: &OscPacket, out: &mut O) -> Result<usize, O::Err> {
     match *packet {
         OscPacket::Message(ref msg) => encode_message(msg, out),
         OscPacket::Bundle(ref bundle) => encode_bundle(bundle, out),
     }
 }
 
-fn encode_message(msg: &OscMessage, out: &mut Vec<u8>) -> Result<()> {
-    encode_string_into(&msg.addr, out);
+fn encode_message<O: Output>(msg: &OscMessage, out: &mut O) -> Result<usize, O::Err> {
+    let mut written = encode_string_into(&msg.addr, out)?;
 
-    let tag_start = out.len();
-    out.push(b',');
+    written += out.write(b",")?;
     for arg in &msg.args {
-        encode_arg_type(arg, out)?;
-    }
-    let tag_len = out.len() - tag_start;
-
-    let new_len = tag_start + pad(tag_len as u64 + 1) as usize;
-    out.resize(new_len, 0);
-
-    for arg in &msg.args {
-        encode_arg_data(arg, out)?;
+        written += encode_arg_type(arg, out)?;
     }
 
-    Ok(())
+    let padding = pad(written as u64 + 1) as usize - written;
+    written += out.write(&[0u8; 4][..padding])?;
+
+    for arg in &msg.args {
+        written += encode_arg_data(arg, out)?;
+    }
+
+    Ok(written)
 }
 
-fn encode_bundle(bundle: &OscBundle, out: &mut Vec<u8>) -> Result<()> {
-    encode_string_into("#bundle", out);
-    encode_time_tag_into(&bundle.timetag, out);
+fn encode_bundle<O: Output>(bundle: &OscBundle, out: &mut O) -> Result<usize, O::Err> {
+    let mut written = encode_string_into("#bundle", out)?;
+    written += encode_time_tag_into(&bundle.timetag, out)?;
 
     for packet in &bundle.content {
         match *packet {
             OscPacket::Message(ref m) => {
-                let len_start = out.len();
-                out.extend(0u32.to_be_bytes());
+                let len_place = out.allocate(4)?;
+                written += 4;
 
-                let msg_start = out.len();
-                encode_message(m, out)?;
-                let msg_len = out.len() - msg_start;
+                let msg_len = encode_message(m, out)?;
+                written += msg_len;
 
-                out[len_start..msg_start].copy_from_slice(&(msg_len as u32).to_be_bytes());
+                out.rewrite(len_place, &(msg_len as u32).to_be_bytes())?;
             }
             OscPacket::Bundle(ref b) => {
-                let len_start = out.len();
-                out.extend(0u32.to_be_bytes());
+                let len_place = out.allocate(4)?;
+                written += 4;
 
-                let bundle_start = out.len();
-                encode_bundle(b, out)?;
-                let bundle_len = out.len() - bundle_start;
+                let bundle_len = encode_bundle(b, out)?;
+                written += bundle_len;
 
-                out[len_start..bundle_start].copy_from_slice(&(bundle_len as u32).to_be_bytes());
+                out.rewrite(len_place, &(bundle_len as u32).to_be_bytes())?;
             }
         }
     }
 
-    Ok(())
+    Ok(written)
 }
 
-fn encode_arg_data(arg: &OscType, out: &mut Vec<u8>) -> Result<()> {
+fn encode_arg_data<O: Output>(arg: &OscType, out: &mut O) -> Result<usize, O::Err> {
     match *arg {
-        OscType::Int(x) => {
-            out.extend(x.to_be_bytes());
-            Ok(())
-        }
-        OscType::Long(x) => {
-            out.extend(x.to_be_bytes());
-            Ok(())
-        }
-        OscType::Float(x) => {
-            out.extend(x.to_be_bytes());
-            Ok(())
-        }
-        OscType::Double(x) => {
-            out.extend(x.to_be_bytes());
-            Ok(())
-        }
-        OscType::Char(x) => {
-            out.extend((x as u32).to_be_bytes());
-            Ok(())
-        }
-        OscType::String(ref x) => {
-            encode_string_into(x, out);
-            Ok(())
-        }
+        OscType::Int(x) => out.write(&x.to_be_bytes()),
+        OscType::Long(x) => out.write(&x.to_be_bytes()),
+        OscType::Float(x) => out.write(&x.to_be_bytes()),
+        OscType::Double(x) => out.write(&x.to_be_bytes()),
+        OscType::Char(x) => out.write(&(x as u32).to_be_bytes()),
+        OscType::String(ref x) => encode_string_into(x, out),
         OscType::Blob(ref x) => {
             let padded_blob_length: usize = pad(x.len() as u64) as usize;
-            out.reserve(4 + padded_blob_length);
-            out.extend((x.len() as u32).to_be_bytes());
+            let padding = padded_blob_length - x.len();
 
-            let new_len = out.len() + padded_blob_length;
-            out.extend(x);
-            out.resize(new_len, 0);
+            out.reserve(4 + padded_blob_length)?;
+            out.write(&(x.len() as u32).to_be_bytes())?;
+            out.write(x)?;
 
-            Ok(())
-        }
-        OscType::Time(ref time) => {
-            encode_time_tag_into(time, out);
-            Ok(())
-        }
-        OscType::Midi(ref x) => {
-            out.extend([x.port, x.status, x.data1, x.data2]);
-            Ok(())
-        }
-        OscType::Color(ref x) => {
-            out.extend([x.red, x.green, x.blue, x.alpha]);
-            Ok(())
-        }
-        OscType::Bool(_) => Ok(()),
-        OscType::Nil => Ok(()),
-        OscType::Inf => Ok(()),
-        OscType::Array(ref x) => {
-            for v in &x.content {
-                encode_arg_data(v, out)?;
+            if padding > 0 {
+                out.write(&[0u8; 3][..padding])?;
             }
-            Ok(())
+
+            Ok(4 + padded_blob_length)
+        }
+        OscType::Time(ref time) => encode_time_tag_into(time, out),
+        OscType::Midi(ref x) => out.write(&[x.port, x.status, x.data1, x.data2]),
+        OscType::Color(ref x) => out.write(&[x.red, x.green, x.blue, x.alpha]),
+        OscType::Bool(_) => Ok(0),
+        OscType::Nil => Ok(0),
+        OscType::Inf => Ok(0),
+        OscType::Array(ref x) => {
+            let mut written = 0;
+            for v in &x.content {
+                written += encode_arg_data(v, out)?;
+            }
+            Ok(written)
         }
     }
 }
 
-fn encode_arg_type(arg: &OscType, out: &mut Vec<u8>) -> Result<()> {
+fn encode_arg_type<O: Output>(arg: &OscType, out: &mut O) -> Result<usize, O::Err> {
     match *arg {
-        OscType::Int(_) => {
-            out.push(b'i');
-            Ok(())
-        }
-        OscType::Long(_) => {
-            out.push(b'h');
-            Ok(())
-        }
-        OscType::Float(_) => {
-            out.push(b'f');
-            Ok(())
-        }
-        OscType::Double(_) => {
-            out.push(b'd');
-            Ok(())
-        }
-        OscType::Char(_) => {
-            out.push(b'c');
-            Ok(())
-        }
-        OscType::String(_) => {
-            out.push(b's');
-            Ok(())
-        },
-        OscType::Blob(_) => {
-            out.push(b'b');
-            Ok(())
-        }
-        OscType::Time(_) => {
-            out.push(b't');
-            Ok(())
-        },
-        OscType::Midi(_) => {
-            out.push(b'm');
-            Ok(())
-        }
-        OscType::Color(_) => {
-            out.push(b'r');
-            Ok(())
-        }
-        OscType::Bool(x) => {
-            out.push(if x { b'T' } else { b'F' });
-            Ok(())
-        }
-        OscType::Nil => {
-            out.push(b'N');
-            Ok(())
-        }
-        OscType::Inf => {
-            out.push(b'I');
-            Ok(())
-        }
+        OscType::Int(_) => out.write(b"i"),
+        OscType::Long(_) => out.write(b"h"),
+        OscType::Float(_) => out.write(b"f"),
+        OscType::Double(_) => out.write(b"d"),
+        OscType::Char(_) => out.write(b"c"),
+        OscType::String(_) => out.write(b"s"),
+        OscType::Blob(_) => out.write(b"b"),
+        OscType::Time(_) => out.write(b"t"),
+        OscType::Midi(_) => out.write(b"m"),
+        OscType::Color(_) => out.write(b"r"),
+        OscType::Bool(x) => out.write(if x { b"T" } else { b"F" }),
+        OscType::Nil => out.write(b"N"),
+        OscType::Inf => out.write(b"I"),
         OscType::Array(ref x) => {
-            out.push(b'[');
+            let mut written = out.write(b"[")?;
+
             for v in &x.content {
-                encode_arg_type(v, out)?;
+                written += encode_arg_type(v, out)?;
             }
-            out.push(b']');
-            Ok(())
+
+            written += out.write(b"]")?;
+            Ok(written)
         }
     }
 }
@@ -227,15 +163,16 @@ pub fn encode_string<S: Into<String>>(s: S) -> Vec<u8> {
 /// Appends the given string `s` to the given Vec `out`,
 /// adding 1-4 null bytes such that the length of the result
 /// is a multiple of 4.
-pub fn encode_string_into<S: AsRef<str>>(s: S, out: &mut Vec<u8>) {
+pub fn encode_string_into<S: AsRef<str>, O: Output>(s: S, out: &mut O) -> Result<usize, O::Err> {
     let s = s.as_ref();
 
     let padded_len = pad(s.len() as u64 + 1) as usize;
-    out.reserve(padded_len);
+    out.reserve(padded_len)?;
 
-    let new_len = out.len() + padded_len;
-    out.extend(s.as_bytes());
-    out.resize(new_len, 0u8);
+    let padding = padded_len - s.len();
+    out.write(s.as_bytes())?;
+    out.write(&[0u8; 4][..padding])?;
+    Ok(s.len() + padding)
 }
 
 /// Returns the position padded to 4 bytes.
@@ -255,9 +192,10 @@ pub fn pad(pos: u64) -> u64 {
     }
 }
 
-fn encode_time_tag_into(time: &OscTime, out: &mut Vec<u8>) {
-    out.extend(time.seconds.to_be_bytes());
-    out.extend(time.fractional.to_be_bytes());
+fn encode_time_tag_into<O: Output>(time: &OscTime, out: &mut O) -> Result<usize, O::Err> {
+    out.write(&time.seconds.to_be_bytes())?;
+    out.write(&time.fractional.to_be_bytes())?;
+    Ok(8)
 }
 
 #[test]
@@ -266,4 +204,64 @@ fn test_pad() {
     assert_eq!(8, pad(5));
     assert_eq!(8, pad(6));
     assert_eq!(8, pad(7));
+}
+
+pub trait Output {
+    type Err;
+    type Placeholder;
+
+    fn allocate(&mut self, size: usize) -> Result<Self::Placeholder, Self::Err>;
+    fn rewrite(&mut self, mark: Self::Placeholder, data: &[u8]) -> Result<(), Self::Err>;
+    fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err>;
+
+    fn reserve(&mut self, _size: usize) -> Result<(), Self::Err> { Ok(()) }
+}
+
+impl<T: Output> Output for &mut T {
+    type Err = T::Err;
+    type Placeholder = T::Placeholder;
+
+    fn allocate(&mut self, size: usize) -> Result<Self::Placeholder, Self::Err> {
+        T::allocate(*self, size)
+    }
+
+    fn reserve(&mut self, size: usize) -> Result<(), Self::Err> {
+        T::reserve(*self, size)
+    }
+
+    fn rewrite(&mut self, mark: Self::Placeholder, data: &[u8]) -> Result<(), Self::Err> {
+        T::rewrite(*self, mark, data)
+    }
+
+    fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
+        T::write(*self, data)
+    }
+}
+
+impl Output for Vec<u8> {
+    type Err = core::convert::Infallible;
+    type Placeholder = (usize, usize);
+
+    fn allocate(&mut self, size: usize) -> Result<Self::Placeholder, Self::Err> {
+        let start = self.len();
+        let end = start + size;
+
+        self.resize(end, 0);
+        Ok((start, end))
+    }
+
+    fn reserve(&mut self, size: usize) -> Result<(), Self::Err> {
+        Vec::reserve(self, size);
+        Ok(())
+    }
+
+    fn rewrite(&mut self, (start, end): Self::Placeholder, data: &[u8]) -> Result<(), Self::Err> {
+        self[start..end].copy_from_slice(data);
+        Ok(())
+    }
+
+    fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
+        self.extend(data);
+        Ok(data.len())
+    }
 }
