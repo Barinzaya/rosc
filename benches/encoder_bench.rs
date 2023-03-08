@@ -133,6 +133,25 @@ fn bench_encode_bundles(b: &mut Bencher) {
 }
 
 #[bench]
+fn bench_encode_bundles_into(b: &mut Bencher) {
+	let packet = OscPacket::Bundle(OscBundle {
+		timetag: (0, 0).into(),
+		content: vec![
+			OscPacket::Bundle(OscBundle {
+				timetag: (0, 0).into(),
+				content: vec![],
+			})
+		; 1000],
+	});
+
+	let mut buffer = Vec::new();
+    b.iter(|| {
+		buffer.clear();
+		rosc::encoder::encode_into(&packet, &mut buffer).unwrap()
+	});
+}
+
+#[bench]
 fn bench_encode_messages(b: &mut Bencher) {
 	let packet = OscPacket::Bundle(OscBundle {
 		timetag: (0, 0).into(),
@@ -145,4 +164,23 @@ fn bench_encode_messages(b: &mut Bencher) {
 	});
 
     b.iter(|| rosc::encoder::encode(&packet).unwrap());
+}
+
+#[bench]
+fn bench_encode_messages_into(b: &mut Bencher) {
+	let packet = OscPacket::Bundle(OscBundle {
+		timetag: (0, 0).into(),
+		content: vec![
+			OscPacket::Message(OscMessage {
+				addr: "/OSC/Message".into(),
+				args: vec![],
+			})
+		; 1000],
+	});
+
+	let mut buffer = Vec::new();
+    b.iter(|| {
+		buffer.clear();
+		rosc::encoder::encode_into(&packet, &mut buffer).unwrap()
+	});
 }
