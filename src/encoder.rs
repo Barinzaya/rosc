@@ -1,10 +1,8 @@
 use crate::alloc::{
-    string::{String, ToString},
+    string::String,
     vec::Vec,
 };
 use crate::types::{OscBundle, OscMessage, OscPacket, OscTime, OscType, Result};
-
-use byteorder::{BigEndian, ByteOrder};
 
 /// Takes a reference to an OSC packet and returns
 /// a byte vector on success. If the packet was invalid
@@ -24,124 +22,192 @@ use byteorder::{BigEndian, ByteOrder};
 /// assert!(encoder::encode(&packet).is_ok())
 /// ```
 pub fn encode(packet: &OscPacket) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    encode_into(packet, &mut bytes)?;
+    Ok(bytes)
+}
+
+pub fn encode_into(packet: &OscPacket, out: &mut Vec<u8>) -> Result<()> {
     match *packet {
-        OscPacket::Message(ref msg) => encode_message(msg),
-        OscPacket::Bundle(ref bundle) => encode_bundle(bundle),
+        OscPacket::Message(ref msg) => encode_message(msg, out),
+        OscPacket::Bundle(ref bundle) => encode_bundle(bundle, out),
     }
 }
 
-fn encode_message(msg: &OscMessage) -> Result<Vec<u8>> {
-    let mut msg_bytes: Vec<u8> = Vec::new();
+fn encode_message(msg: &OscMessage, out: &mut Vec<u8>) -> Result<()> {
+    encode_string_into(&msg.addr, out);
 
-    encode_string_into(&msg.addr, &mut msg_bytes);
-    let mut type_tags: String = ",".to_string();
-    let mut arg_bytes: Vec<u8> = Vec::new();
+    let tag_start = out.len();
+    out.push(b',');
+    for arg in &msg.args {
+        encode_arg_type(arg, out)?;
+    }
+    let tag_len = out.len() - tag_start;
+
+    let new_len = tag_start + pad(tag_len as u64 + 1) as usize;
+    out.resize(new_len, 0);
 
     for arg in &msg.args {
-        let (bytes, tags): (Vec<u8>, String) = encode_arg(arg)?;
-
-        arg_bytes.extend(bytes);
-        type_tags.push_str(&tags);
+        encode_arg_data(arg, out)?;
     }
 
-    encode_string_into(&type_tags, &mut msg_bytes);
-    msg_bytes.extend(arg_bytes);
-    Ok(msg_bytes)
+    Ok(())
 }
 
-fn encode_bundle(bundle: &OscBundle) -> Result<Vec<u8>> {
-    let mut bundle_bytes: Vec<u8> = Vec::new();
-    encode_string_into("#bundle", &mut bundle_bytes);
-    encode_time_tag_into(bundle.timetag, &mut bundle_bytes);
+fn encode_bundle(bundle: &OscBundle, out: &mut Vec<u8>) -> Result<()> {
+    encode_string_into("#bundle", out);
+    encode_time_tag_into(&bundle.timetag, out);
 
     for packet in &bundle.content {
         match *packet {
             OscPacket::Message(ref m) => {
-                let msg = encode_message(m)?;
-                let mut msg_size = [0u8; 4];
-                BigEndian::write_u32(&mut msg_size, msg.len() as u32);
-                bundle_bytes.extend(msg_size.iter().copied().chain(msg.into_iter()));
+                let len_start = out.len();
+                out.extend(0u32.to_be_bytes());
+
+                let msg_start = out.len();
+                encode_message(m, out)?;
+                let msg_len = out.len() - msg_start;
+
+                out[len_start..msg_start].copy_from_slice(&(msg_len as u32).to_be_bytes());
             }
             OscPacket::Bundle(ref b) => {
-                let bdl = encode_bundle(b)?;
-                let mut bdl_size = [0u8; 4];
-                BigEndian::write_u32(&mut bdl_size, bdl.len() as u32);
-                bundle_bytes.extend(bdl_size.iter().copied().chain(bdl.into_iter()));
+                let len_start = out.len();
+                out.extend(0u32.to_be_bytes());
+
+                let bundle_start = out.len();
+                encode_bundle(b, out)?;
+                let bundle_len = out.len() - bundle_start;
+
+                out[len_start..bundle_start].copy_from_slice(&(bundle_len as u32).to_be_bytes());
             }
         }
     }
 
-    Ok(bundle_bytes)
+    Ok(())
 }
 
-fn encode_arg(arg: &OscType) -> Result<(Vec<u8>, String)> {
+fn encode_arg_data(arg: &OscType, out: &mut Vec<u8>) -> Result<()> {
     match *arg {
-        OscType::Int(ref x) => {
-            let mut bytes = vec![0u8; 4];
-            BigEndian::write_i32(&mut bytes, *x);
-            Ok((bytes, "i".into()))
+        OscType::Int(x) => {
+            out.extend(x.to_be_bytes());
+            Ok(())
         }
-        OscType::Long(ref x) => {
-            let mut bytes = vec![0u8; 8];
-            BigEndian::write_i64(&mut bytes, *x);
-            Ok((bytes, "h".into()))
+        OscType::Long(x) => {
+            out.extend(x.to_be_bytes());
+            Ok(())
         }
-        OscType::Float(ref x) => {
-            let mut bytes = vec![0u8; 4];
-            BigEndian::write_f32(&mut bytes, *x);
-            Ok((bytes, "f".into()))
+        OscType::Float(x) => {
+            out.extend(x.to_be_bytes());
+            Ok(())
         }
-        OscType::Double(ref x) => {
-            let mut bytes = vec![0u8; 8];
-            BigEndian::write_f64(&mut bytes, *x);
-            Ok((bytes, "d".into()))
+        OscType::Double(x) => {
+            out.extend(x.to_be_bytes());
+            Ok(())
         }
-        OscType::Char(ref x) => {
-            let mut bytes = vec![0u8; 4];
-            BigEndian::write_u32(&mut bytes, *x as u32);
-            Ok((bytes, "c".into()))
+        OscType::Char(x) => {
+            out.extend((x as u32).to_be_bytes());
+            Ok(())
         }
         OscType::String(ref x) => {
-            let mut bytes = vec![0u8; 0];
-            encode_string_into(x, &mut bytes);
-            Ok((bytes, "s".into()))
-        },
+            encode_string_into(x, out);
+            Ok(())
+        }
         OscType::Blob(ref x) => {
             let padded_blob_length: usize = pad(x.len() as u64) as usize;
-            let mut bytes = vec![0u8; 4 + padded_blob_length];
-            // write length
-            BigEndian::write_i32(&mut bytes[..4], x.len() as i32);
-            for (i, v) in x.iter().enumerate() {
-                bytes[i + 4] = *v;
-            }
-            Ok((bytes, "b".into()))
+            out.reserve(4 + padded_blob_length);
+            out.extend((x.len() as u32).to_be_bytes());
+
+            let new_len = out.len() + padded_blob_length;
+            out.extend(x);
+            out.resize(new_len, 0);
+
+            Ok(())
         }
-        OscType::Time(time) => {
-            let mut bytes = Vec::with_capacity(8);
-            encode_time_tag_into(time, &mut bytes);
-            Ok((bytes, "t".into()))
-        },
-        OscType::Midi(ref x) => Ok((vec![x.port, x.status, x.data1, x.data2], "m".into())),
-        OscType::Color(ref x) => Ok((vec![x.red, x.green, x.blue, x.alpha], "r".into())),
-        OscType::Bool(ref x) => {
-            if *x {
-                Ok((vec![], "T".into()))
-            } else {
-                Ok((vec![], "F".into()))
-            }
+        OscType::Time(ref time) => {
+            encode_time_tag_into(time, out);
+            Ok(())
         }
-        OscType::Nil => Ok((vec![], "N".into())),
-        OscType::Inf => Ok((vec![], "I".into())),
+        OscType::Midi(ref x) => {
+            out.extend([x.port, x.status, x.data1, x.data2]);
+            Ok(())
+        }
+        OscType::Color(ref x) => {
+            out.extend([x.red, x.green, x.blue, x.alpha]);
+            Ok(())
+        }
+        OscType::Bool(_) => Ok(()),
+        OscType::Nil => Ok(()),
+        OscType::Inf => Ok(()),
         OscType::Array(ref x) => {
-            let mut bytes = vec![0u8; 0];
-            let mut type_tags = String::from("[");
-            for v in x.content.iter() {
-                let (other_bytes, other_type_tags) = encode_arg(v)?;
-                bytes.extend(other_bytes);
-                type_tags.push_str(&other_type_tags);
+            for v in &x.content {
+                encode_arg_data(v, out)?;
             }
-            type_tags.push(']');
-            Ok((bytes, type_tags))
+            Ok(())
+        }
+    }
+}
+
+fn encode_arg_type(arg: &OscType, out: &mut Vec<u8>) -> Result<()> {
+    match *arg {
+        OscType::Int(_) => {
+            out.push(b'i');
+            Ok(())
+        }
+        OscType::Long(_) => {
+            out.push(b'h');
+            Ok(())
+        }
+        OscType::Float(_) => {
+            out.push(b'f');
+            Ok(())
+        }
+        OscType::Double(_) => {
+            out.push(b'd');
+            Ok(())
+        }
+        OscType::Char(_) => {
+            out.push(b'c');
+            Ok(())
+        }
+        OscType::String(_) => {
+            out.push(b's');
+            Ok(())
+        },
+        OscType::Blob(_) => {
+            out.push(b'b');
+            Ok(())
+        }
+        OscType::Time(_) => {
+            out.push(b't');
+            Ok(())
+        },
+        OscType::Midi(_) => {
+            out.push(b'm');
+            Ok(())
+        }
+        OscType::Color(_) => {
+            out.push(b'r');
+            Ok(())
+        }
+        OscType::Bool(x) => {
+            out.push(if x { b'T' } else { b'F' });
+            Ok(())
+        }
+        OscType::Nil => {
+            out.push(b'N');
+            Ok(())
+        }
+        OscType::Inf => {
+            out.push(b'I');
+            Ok(())
+        }
+        OscType::Array(ref x) => {
+            out.push(b'[');
+            for v in &x.content {
+                encode_arg_type(v, out)?;
+            }
+            out.push(b']');
+            Ok(())
         }
     }
 }
@@ -189,11 +255,9 @@ pub fn pad(pos: u64) -> u64 {
     }
 }
 
-fn encode_time_tag_into(time: OscTime, out: &mut Vec<u8>) {
-    let mut bytes = [0u8; 8];
-    BigEndian::write_u32(&mut bytes[..4], time.seconds);
-    BigEndian::write_u32(&mut bytes[4..], time.fractional);
-    out.extend(bytes);
+fn encode_time_tag_into(time: &OscTime, out: &mut Vec<u8>) {
+    out.extend(time.seconds.to_be_bytes());
+    out.extend(time.fractional.to_be_bytes());
 }
 
 #[test]
