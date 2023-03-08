@@ -166,7 +166,7 @@ fn encode_arg(arg: &OscType) -> Result<(Option<Vec<u8>>, String)> {
 /// adds null bytes until the length of the result is a
 /// multiple of 4.
 pub fn encode_string<S: Into<String>>(s: S) -> Vec<u8> {
-    let mut bytes: Vec<u8> = s.into().as_bytes().into();
+    let mut bytes: Vec<u8> = s.into().into_bytes();
     bytes.push(0u8);
     pad_bytes(&mut bytes);
     bytes
