@@ -52,9 +52,7 @@ fn encode_message(msg: &OscMessage) -> Result<Vec<u8>> {
 fn encode_bundle(bundle: &OscBundle) -> Result<Vec<u8>> {
     let mut bundle_bytes: Vec<u8> = Vec::new();
     encode_string_into("#bundle", &mut bundle_bytes);
-
-    let (time_bytes, _) = encode_arg(&OscType::Time(bundle.timetag))?;
-    bundle_bytes.extend(time_bytes);
+    encode_time_tag_into(bundle.timetag, &mut bundle_bytes);
 
     for packet in &bundle.content {
         match *packet {
@@ -118,7 +116,11 @@ fn encode_arg(arg: &OscType) -> Result<(Vec<u8>, String)> {
             }
             Ok((bytes, "b".into()))
         }
-        OscType::Time(time) => Ok((encode_time_tag(time), "t".into())),
+        OscType::Time(time) => {
+            let mut bytes = Vec::with_capacity(8);
+            encode_time_tag_into(time, &mut bytes);
+            Ok((bytes, "t".into()))
+        },
         OscType::Midi(ref x) => Ok((vec![x.port, x.status, x.data1, x.data2], "m".into())),
         OscType::Color(ref x) => Ok((vec![x.red, x.green, x.blue, x.alpha], "r".into())),
         OscType::Bool(ref x) => {
@@ -187,11 +189,11 @@ pub fn pad(pos: u64) -> u64 {
     }
 }
 
-fn encode_time_tag(time: OscTime) -> Vec<u8> {
-    let mut bytes = vec![0u8; 8];
+fn encode_time_tag_into(time: OscTime, out: &mut Vec<u8>) {
+    let mut bytes = [0u8; 8];
     BigEndian::write_u32(&mut bytes[..4], time.seconds);
     BigEndian::write_u32(&mut bytes[4..], time.fractional);
-    bytes
+    out.extend(bytes);
 }
 
 #[test]
