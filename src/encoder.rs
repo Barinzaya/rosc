@@ -2,7 +2,6 @@ use crate::alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use crate::errors::OscError;
 use crate::types::{OscBundle, OscMessage, OscPacket, OscTime, OscType, Result};
 
 use byteorder::{BigEndian, ByteOrder};
