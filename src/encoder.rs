@@ -23,7 +23,8 @@ use crate::types::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 /// ```
 pub fn encode(packet: &OscPacket) -> crate::types::Result<Vec<u8>> {
     let mut bytes = Vec::new();
-    let _ = encode_into(packet, &mut bytes);
+    encode_into(packet, &mut bytes)
+        .expect("Failed to write encoded packet into Vec");
     Ok(bytes)
 }
 
