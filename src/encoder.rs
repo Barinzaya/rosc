@@ -86,11 +86,13 @@ fn encode_bundle<O: Output>(bundle: &OscBundle, out: &mut O) -> Result<usize, O:
         match *packet {
             OscPacket::Message(ref m) => {
                 let msg_len = encode_message(m, &mut NullOutput).unwrap();
+                out.reserve(4 + msg_len)?;
                 written += out.write(&(msg_len as u32).to_be_bytes())?;
                 written += encode_message(m, out)?;
             }
             OscPacket::Bundle(ref b) => {
                 let bundle_len = encode_bundle(b, &mut NullOutput).unwrap();
+                out.reserve(4 + bundle_len)?;
                 written += out.write(&(bundle_len as u32).to_be_bytes())?;
                 written += encode_bundle(b, out)?;
             }
