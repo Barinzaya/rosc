@@ -255,18 +255,6 @@ pub trait Output {
     fn reserve(&mut self, _size: usize) -> Result<(), Self::Err> { Ok(()) }
 }
 
-impl<T: Output> Output for &mut T {
-    type Err = T::Err;
-
-    fn reserve(&mut self, size: usize) -> Result<(), Self::Err> {
-        T::reserve(*self, size)
-    }
-
-    fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
-        T::write(*self, data)
-    }
-}
-
 impl Output for Vec<u8> {
     type Err = core::convert::Infallible;
 
