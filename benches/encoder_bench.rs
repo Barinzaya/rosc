@@ -117,6 +117,108 @@ fn bench_encode_bundles_into(b: &mut Bencher) {
 }
 
 #[bench]
+fn bench_encode_huge(b: &mut Bencher) {
+	let packet = OscPacket::Bundle(OscBundle {
+		timetag: (0, 0).into(),
+		content: vec![
+			OscPacket::Message(OscMessage {
+				addr: "/OSC/Message".into(),
+				args: vec![
+					4i32.into(),
+					42i64.into(),
+					3.1415926f32.into(),
+					3.14159265359f64.into(),
+					"String".into(),
+					(0..1024).into_iter().map(|x| x as u8).collect::<Vec<u8>>().into(),
+					(123, 456).into(),
+					'c'.into(),
+					false.into(),
+					true.into(),
+					OscType::Nil,
+					OscType::Inf,
+					OscMidiMessage {
+						port: 4,
+						status: 41,
+						data1: 42,
+						data2: 129,
+					}.into(),
+					OscColor {
+						red: 255,
+						green: 192,
+						blue: 42,
+						alpha: 13,
+					}.into(),
+					OscArray {
+						content: vec![
+							42i32.into(),
+							OscArray {
+								content: vec![1.23.into(), 3.21.into()],
+							}.into(),
+							"Another String".into(),
+						],
+					}.into(),
+				],
+			})
+		; 1000],
+	});
+
+    b.iter(|| rosc::encoder::encode(&packet).unwrap());
+}
+
+#[bench]
+fn bench_encode_huge_into(b: &mut Bencher) {
+	let packet = OscPacket::Bundle(OscBundle {
+		timetag: (0, 0).into(),
+		content: vec![
+			OscPacket::Message(OscMessage {
+				addr: "/OSC/Message".into(),
+				args: vec![
+					4i32.into(),
+					42i64.into(),
+					3.1415926f32.into(),
+					3.14159265359f64.into(),
+					"String".into(),
+					(0..1024).into_iter().map(|x| x as u8).collect::<Vec<u8>>().into(),
+					(123, 456).into(),
+					'c'.into(),
+					false.into(),
+					true.into(),
+					OscType::Nil,
+					OscType::Inf,
+					OscMidiMessage {
+						port: 4,
+						status: 41,
+						data1: 42,
+						data2: 129,
+					}.into(),
+					OscColor {
+						red: 255,
+						green: 192,
+						blue: 42,
+						alpha: 13,
+					}.into(),
+					OscArray {
+						content: vec![
+							42i32.into(),
+							OscArray {
+								content: vec![1.23.into(), 3.21.into()],
+							}.into(),
+							"Another String".into(),
+						],
+					}.into(),
+				],
+			})
+		; 1000],
+	});
+
+	let mut buffer = Vec::new();
+    b.iter(|| {
+		buffer.clear();
+		rosc::encoder::encode_into(&packet, &mut buffer).unwrap()
+	});
+}
+
+#[bench]
 fn bench_encode_messages(b: &mut Bencher) {
 	let packet = OscPacket::Bundle(OscBundle {
 		timetag: (0, 0).into(),
