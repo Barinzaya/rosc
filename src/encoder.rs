@@ -225,8 +225,11 @@ fn test_pad() {
 /// existing buffer or writing directly to an external sink
 /// (e.g. a file).
 ///
-/// Implementations are currently provided for this trait:
-/// - `Vec<u8>`: Data will be appended to the end of the Vec.
+/// Implementations are currently provided for this trait for:
+/// - `std::io::Write` (with feature `std`): Data will be
+///   written to the output.
+/// - `Vec<u8>` (without feature `std`): Data will be
+///   appended to the end of the Vec.
 /// - `NullOutput`: Data is not written anywhere.
 ///   Potentially useful for calculating the size of a
 ///   packet without writing it anywhere.
@@ -255,6 +258,7 @@ pub trait Output {
     fn reserve(&mut self, _size: usize) -> Result<(), Self::Err> { Ok(()) }
 }
 
+#[cfg(not(feature = "std"))]
 impl Output for Vec<u8> {
     type Err = core::convert::Infallible;
 
@@ -266,6 +270,16 @@ impl Output for Vec<u8> {
     fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
         self.extend(data);
         Ok(data.len())
+    }
+}
+
+#[cfg(feature = "std")]
+impl<W: std::io::Write> Output for W {
+    type Err = std::io::Error;
+
+    fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
+        std::io::Write::write_all(self, data)
+            .map(|_| data.len())
     }
 }
 
