@@ -80,22 +80,14 @@ fn encode_bundle<O: Output>(bundle: &OscBundle, out: &mut O) -> Result<usize, O:
     for packet in &bundle.content {
         match *packet {
             OscPacket::Message(ref m) => {
-                let len_place = out.allocate(4)?;
-                written += 4;
-
-                let msg_len = encode_message(m, out)?;
-                written += msg_len;
-
-                out.rewrite(len_place, &(msg_len as u32).to_be_bytes())?;
+                let msg_len = encode_message(m, &mut NullOutput).unwrap();
+                written += out.write(&(msg_len as u32).to_be_bytes())?;
+                written += encode_message(m, out)?;
             }
             OscPacket::Bundle(ref b) => {
-                let len_place = out.allocate(4)?;
-                written += 4;
-
-                let bundle_len = encode_bundle(b, out)?;
-                written += bundle_len;
-
-                out.rewrite(len_place, &(bundle_len as u32).to_be_bytes())?;
+                let bundle_len = encode_bundle(b, &mut NullOutput).unwrap();
+                written += out.write(&(bundle_len as u32).to_be_bytes())?;
+                written += encode_bundle(b, out)?;
             }
         }
     }
@@ -247,23 +239,6 @@ pub trait Output {
     /// The error type which is returned from Output functions.
     type Err;
 
-    /// A placeholder for data that is to be filled in after
-    /// additional data is written.
-    type Placeholder;
-
-    /// Allocates space in the output for data to be
-    /// retroactively written later, returning a
-    /// `Placeholder` that can be used to fill in this data
-    /// later (with `rewrite`).
-    fn allocate(&mut self, size: usize) -> Result<Self::Placeholder, Self::Err>;
-
-    /// Rewrites data that was previously allocated with
-    /// `allocate`. The `Placeholder` is moved in, so any
-    /// allocated space may only be written once. The data
-    /// given should be of the exact size that was given to
-    /// `allocate`.
-    fn rewrite(&mut self, mark: Self::Placeholder, data: &[u8]) -> Result<(), Self::Err>;
-
     /// Writes a block of data to the output. The size of
     /// the data is return on success.
     ///
@@ -282,18 +257,9 @@ pub trait Output {
 
 impl<T: Output> Output for &mut T {
     type Err = T::Err;
-    type Placeholder = T::Placeholder;
-
-    fn allocate(&mut self, size: usize) -> Result<Self::Placeholder, Self::Err> {
-        T::allocate(*self, size)
-    }
 
     fn reserve(&mut self, size: usize) -> Result<(), Self::Err> {
         T::reserve(*self, size)
-    }
-
-    fn rewrite(&mut self, mark: Self::Placeholder, data: &[u8]) -> Result<(), Self::Err> {
-        T::rewrite(*self, mark, data)
     }
 
     fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
@@ -303,23 +269,9 @@ impl<T: Output> Output for &mut T {
 
 impl Output for Vec<u8> {
     type Err = core::convert::Infallible;
-    type Placeholder = (usize, usize);
-
-    fn allocate(&mut self, size: usize) -> Result<Self::Placeholder, Self::Err> {
-        let start = self.len();
-        let end = start + size;
-
-        self.resize(end, 0);
-        Ok((start, end))
-    }
 
     fn reserve(&mut self, size: usize) -> Result<(), Self::Err> {
         Vec::reserve(self, size);
-        Ok(())
-    }
-
-    fn rewrite(&mut self, (start, end): Self::Placeholder, data: &[u8]) -> Result<(), Self::Err> {
-        self[start..end].copy_from_slice(data);
         Ok(())
     }
 
@@ -339,17 +291,6 @@ pub struct NullOutput;
 
 impl Output for NullOutput {
     type Err = core::convert::Infallible;
-    type Placeholder = ();
-
-    #[inline(always)]
-    fn allocate(&mut self, _: usize) -> Result<Self::Placeholder, Self::Err> {
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn rewrite(&mut self, _: Self::Placeholder, _: &[u8]) -> Result<(), Self::Err> {
-        Ok(())
-    }
 
     #[inline(always)]
     fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
