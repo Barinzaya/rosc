@@ -255,6 +255,7 @@ pub trait Output {
     /// This is used as an optimization prior to writing
     /// certain data loads, but should not be depended on
     /// for correct output.
+    #[inline(always)]
     fn reserve(&mut self, _size: usize) -> Result<(), Self::Err> { Ok(()) }
 }
 
