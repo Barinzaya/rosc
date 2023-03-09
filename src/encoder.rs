@@ -34,6 +34,11 @@ pub fn encode(packet: &OscPacket) -> crate::types::Result<Vec<u8>> {
 /// error will be returned. Note that in that case, the
 /// output may have been partially written!
 ///
+/// NOTE: The OSC encoder will write output in small pieces
+/// (as small as a single byte), so the output should be
+/// buffered if write calls have a large overhead (e.g.
+/// writing to a file or a socket).
+///
 /// # Example
 ///
 /// ```
@@ -233,11 +238,6 @@ fn test_pad() {
 /// - `NullOutput`: Data is not written anywhere.
 ///   Potentially useful for calculating the size of a
 ///   packet without writing it anywhere.
-///
-/// Note that the OSC encoder will write output in small
-/// pieces (as small as a single byte), so the output should
-/// be buffered if write calls have a large overhead (e.g.
-/// writing to a file).
 pub trait Output {
     /// The error type which is returned from Output functions.
     type Err;
