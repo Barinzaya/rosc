@@ -27,6 +27,27 @@ pub fn encode(packet: &OscPacket) -> crate::types::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Takes a reference to an OSC packet and writes the
+/// encoded bytes to the given output. On success, the
+/// number of bytes written will be returned. If an error
+/// occurs during encoding, encoding will stop and the
+/// error will be returned. Note that in that case, the
+/// output may have been partially written!
+///
+/// # Example
+///
+/// ```
+/// use rosc::{OscPacket,OscMessage,OscType};
+/// use rosc::encoder;
+///
+/// let mut bytes = Vec::new();
+/// let packet = OscPacket::Message(OscMessage{
+///         addr: "/greet/me".to_string(),
+///         args: vec![OscType::String("hi!".to_string())]
+///     }
+/// );
+/// assert!(encoder::encode_into(&packet, &mut bytes).is_ok())
+/// ```
 pub fn encode_into<O: Output>(packet: &OscPacket, out: &mut O) -> Result<usize, O::Err> {
     match *packet {
         OscPacket::Message(ref msg) => encode_message(msg, out),
@@ -160,9 +181,9 @@ pub fn encode_string<S: Into<String>>(s: S) -> Vec<u8> {
     bytes
 }
 
-/// Appends the given string `s` to the given Vec `out`,
-/// adding 1-4 null bytes such that the length of the result
-/// is a multiple of 4.
+/// Writes the given string `s` to the given Output, adding
+/// 1-4 null bytes such that the length of the result is a
+/// multiple of 4.
 pub fn encode_string_into<S: AsRef<str>, O: Output>(s: S, out: &mut O) -> Result<usize, O::Err> {
     let s = s.as_ref();
 
@@ -206,14 +227,56 @@ fn test_pad() {
     assert_eq!(8, pad(7));
 }
 
+/// A trait for values that can receive encoded OSC output
+/// via `encode_into`. This allows more flexibility in how
+/// the output is handled, including reusing part of an
+/// existing buffer or writing directly to an external sink
+/// (e.g. a file).
+///
+/// Implementations are currently provided for this trait:
+/// - `Vec<u8>`: Data will be appended to the end of the Vec.
+/// - `NullOutput`: Data is not written anywhere.
+///   Potentially useful for calculating the size of a
+///   packet without writing it anywhere.
+///
+/// Note that the OSC encoder will write output in small
+/// pieces (as small as a single byte), so the output should
+/// be buffered if write calls have a large overhead (e.g.
+/// writing to a file).
 pub trait Output {
+    /// The error type which is returned from Output functions.
     type Err;
+
+    /// A placeholder for data that is to be filled in after
+    /// additional data is written.
     type Placeholder;
 
+    /// Allocates space in the output for data to be
+    /// retroactively written later, returning a
+    /// `Placeholder` that can be used to fill in this data
+    /// later (with `rewrite`).
     fn allocate(&mut self, size: usize) -> Result<Self::Placeholder, Self::Err>;
+
+    /// Rewrites data that was previously allocated with
+    /// `allocate`. The `Placeholder` is moved in, so any
+    /// allocated space may only be written once. The data
+    /// given should be of the exact size that was given to
+    /// `allocate`.
     fn rewrite(&mut self, mark: Self::Placeholder, data: &[u8]) -> Result<(), Self::Err>;
+
+    /// Writes a block of data to the output. The size of
+    /// the data is return on success.
+    ///
+    /// Note that, unlike `std::io::Writo::write`, this
+    /// function is expected to write all of the given data.
     fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err>;
 
+    /// Reserves space in the output to write at least the
+    /// given number of bytes.
+    ///
+    /// This is used as an optimization prior to writing
+    /// certain data loads, but should not be depended on
+    /// for correct output.
     fn reserve(&mut self, _size: usize) -> Result<(), Self::Err> { Ok(()) }
 }
 
@@ -262,6 +325,34 @@ impl Output for Vec<u8> {
 
     fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
         self.extend(data);
+        Ok(data.len())
+    }
+}
+
+/// An implementation of `Output` that does not write the
+/// data anywhere.
+///
+/// Intended for use as an `Output` to pre-calculate sizes
+/// without actually writing any data.
+#[derive(Clone, Copy, Debug)]
+pub struct NullOutput;
+
+impl Output for NullOutput {
+    type Err = core::convert::Infallible;
+    type Placeholder = ();
+
+    #[inline(always)]
+    fn allocate(&mut self, _: usize) -> Result<Self::Placeholder, Self::Err> {
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn rewrite(&mut self, _: Self::Placeholder, _: &[u8]) -> Result<(), Self::Err> {
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
         Ok(data.len())
     }
 }
