@@ -6,6 +6,17 @@ use rosc::*;
 use self::test::Bencher;
 
 #[bench]
+fn bench_encode_args_blob(b: &mut Bencher) {
+	let packet = OscPacket::Message(OscMessage {
+        addr: "/OSC/Blobs".into(),
+        args: (0..1000).into_iter().map(|x| OscType::Blob((0..(x%20) as u8).into_iter().collect()))
+            .collect(),
+    });
+
+    b.iter(|| rosc::encoder::encode(&packet).unwrap());
+}
+
+#[bench]
 fn bench_encode_args_bool(b: &mut Bencher) {
 	let packet = OscPacket::Message(OscMessage {
         addr: "/OSC/Bools".into(),
