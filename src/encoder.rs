@@ -242,10 +242,6 @@ fn test_pad() {
 ///   packet without writing it anywhere.
 pub trait Output {
     /// The error type which is returned from Output functions.
-    #[cfg(feature = "std")]
-    type Err: std::error::Error;
-
-    #[cfg(not(feature = "std"))]
     type Err;
 
     /// Writes a block of data to the output. The size of
