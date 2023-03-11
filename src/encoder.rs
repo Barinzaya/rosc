@@ -1,7 +1,4 @@
-use crate::alloc::{
-    string::String,
-    vec::Vec,
-};
+use crate::alloc::{string::String, vec::Vec};
 use crate::types::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 
 /// Takes a reference to an OSC packet and returns
@@ -23,8 +20,7 @@ use crate::types::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 /// ```
 pub fn encode(packet: &OscPacket) -> crate::types::Result<Vec<u8>> {
     let mut bytes = Vec::new();
-    encode_into(packet, &mut bytes)
-        .expect("Failed to write encoded packet into Vec");
+    encode_into(packet, &mut bytes).expect("Failed to write encoded packet into Vec");
     Ok(bytes)
 }
 
@@ -259,7 +255,9 @@ pub trait Output {
     /// certain data loads, but should not be depended on
     /// for correct output.
     #[inline(always)]
-    fn reserve(&mut self, _size: usize) -> Result<(), Self::Err> { Ok(()) }
+    fn reserve(&mut self, _size: usize) -> Result<(), Self::Err> {
+        Ok(())
+    }
 }
 
 #[cfg(not(feature = "std"))]
@@ -282,8 +280,7 @@ impl<W: std::io::Write> Output for W {
     type Err = std::io::Error;
 
     fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
-        std::io::Write::write_all(self, data)
-            .map(|_| data.len())
+        std::io::Write::write_all(self, data).map(|_| data.len())
     }
 }
 
