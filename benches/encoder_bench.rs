@@ -7,6 +7,7 @@ use rosc::*;
 
 #[bench]
 fn bench_encode_args_array(b: &mut Bencher) {
+    // Encoded message contains 100 argumnts, each of which is an Array containing 0-20 Int values.
     let packet = OscPacket::Message(OscMessage {
         addr: "/OSC/Array".into(),
         args: (0..100)
@@ -25,6 +26,7 @@ fn bench_encode_args_array(b: &mut Bencher) {
 
 #[bench]
 fn bench_encode_args_blob(b: &mut Bencher) {
+    // Encoded message contains 1000 argumnts, each of which is a Blob containing 0-20 bytes.
     let packet = OscPacket::Message(OscMessage {
         addr: "/OSC/Blobs".into(),
         args: (0..1000)
@@ -38,6 +40,8 @@ fn bench_encode_args_blob(b: &mut Bencher) {
 
 #[bench]
 fn bench_encode_args_bool(b: &mut Bencher) {
+    // Encoded message contains 1000 arguments, each of which is a Bool. Half are false and half are
+    // true.
     let packet = OscPacket::Message(OscMessage {
         addr: "/OSC/Bools".into(),
         args: (0..1000)
@@ -51,6 +55,7 @@ fn bench_encode_args_bool(b: &mut Bencher) {
 
 #[bench]
 fn bench_encode_args_double(b: &mut Bencher) {
+    // Encoded message contains 1000 arguments, each of which is a Double.
     let packet = OscPacket::Message(OscMessage {
         addr: "/OSC/Doubles".into(),
         args: (0..1000)
@@ -64,6 +69,7 @@ fn bench_encode_args_double(b: &mut Bencher) {
 
 #[bench]
 fn bench_encode_args_float(b: &mut Bencher) {
+    // Encoded message contains 1000 arguments, each of which is a Float.
     let packet = OscPacket::Message(OscMessage {
         addr: "/OSC/Floats".into(),
         args: (0..1000)
@@ -77,6 +83,7 @@ fn bench_encode_args_float(b: &mut Bencher) {
 
 #[bench]
 fn bench_encode_args_int(b: &mut Bencher) {
+    // Encoded message contains 1000 arguments, each of which is an Int.
     let packet = OscPacket::Message(OscMessage {
         addr: "/OSC/Ints".into(),
         args: (0..1000).into_iter().map(OscType::Int).collect(),
@@ -87,6 +94,7 @@ fn bench_encode_args_int(b: &mut Bencher) {
 
 #[bench]
 fn bench_encode_args_long(b: &mut Bencher) {
+    // Encoded message contains 1000 arguments, each of which is a Long.
     let packet = OscPacket::Message(OscMessage {
         addr: "/OSC/Longs".into(),
         args: (0..1000).into_iter().map(OscType::Long).collect(),
@@ -97,6 +105,7 @@ fn bench_encode_args_long(b: &mut Bencher) {
 
 #[bench]
 fn bench_encode_args_nil(b: &mut Bencher) {
+    // Encoded message contains 1000 arguments, each of which is Nil.
     let packet = OscPacket::Message(OscMessage {
         addr: "/OSC/Nils".into(),
         args: (0..1000).into_iter().map(|_| OscType::Nil).collect(),
@@ -107,6 +116,8 @@ fn bench_encode_args_nil(b: &mut Bencher) {
 
 #[bench]
 fn bench_encode_args_string(b: &mut Bencher) {
+    // Encoded message contains 1000 arguments, each of which is a String containing the string
+    // representation of its argument index.
     let packet = OscPacket::Message(OscMessage {
         addr: "/OSC/Strings".into(),
         args: (0..1000)
@@ -120,6 +131,7 @@ fn bench_encode_args_string(b: &mut Bencher) {
 
 #[bench]
 fn bench_encode_bundles(b: &mut Bencher) {
+    // Encoded bundle contains 1000 sub-bundles, each of which are empty.
     let packet = OscPacket::Bundle(OscBundle {
         timetag: (0, 0).into(),
         content: vec![
@@ -135,7 +147,9 @@ fn bench_encode_bundles(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_encode_bundles_into_new(b: &mut Bencher) {
+fn bench_encode_bundles_into_new_vec(b: &mut Bencher) {
+    // Encoded bundle contains 1000 sub-bundles, each of which are empty.
+    // The packet is encoded into a new Vec each time, resulting in a fresh allocation.
     let packet = OscPacket::Bundle(OscBundle {
         timetag: (0, 0).into(),
         content: vec![
@@ -151,7 +165,9 @@ fn bench_encode_bundles_into_new(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_encode_bundles_into_reuse(b: &mut Bencher) {
+fn bench_encode_bundles_into_reused_vec(b: &mut Bencher) {
+    // Encoded bundle contains 1000 sub-bundles, each of which are empty.
+    // The packet is encoded into the same Vec each time, resulting in no allocation after the first.
     let packet = OscPacket::Bundle(OscBundle {
         timetag: (0, 0).into(),
         content: vec![
@@ -171,7 +187,9 @@ fn bench_encode_bundles_into_reuse(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_encode_huge(b: &mut Bencher) {
+fn bench_encode_huge_bundle(b: &mut Bencher) {
+    // Encoded bundle contains 1000 messages, each of which contains an argument of every type
+    // (including a 1 KB blob).
     let packet = OscPacket::Bundle(OscBundle {
         timetag: (0, 0).into(),
         content: vec![
@@ -229,7 +247,10 @@ fn bench_encode_huge(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_encode_huge_into_new(b: &mut Bencher) {
+fn bench_encode_huge_bundle_into_new_vec(b: &mut Bencher) {
+    // Encoded bundle contains 1000 messages, each of which contains an argument of every type
+    // (including a 1 KB blob).
+    // The packet is encoded into a new Vec each time, resulting in a fresh allocation.
     let packet = OscPacket::Bundle(OscBundle {
         timetag: (0, 0).into(),
         content: vec![
@@ -287,7 +308,10 @@ fn bench_encode_huge_into_new(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_encode_huge_into_reuse(b: &mut Bencher) {
+fn bench_encode_huge_bundle_into_reused_vec(b: &mut Bencher) {
+    // Encoded bundle contains 1000 messages, each of which contains an argument of every type
+    // (including a 1 KB blob).
+    // The packet is encoded into the same Vec each time, resulting in no allocation after the first.
     let packet = OscPacket::Bundle(OscBundle {
         timetag: (0, 0).into(),
         content: vec![
@@ -350,6 +374,7 @@ fn bench_encode_huge_into_reuse(b: &mut Bencher) {
 
 #[bench]
 fn bench_encode_messages(b: &mut Bencher) {
+    // Encoded bundle contains 1000 messages, each of which has no arguments.
     let packet = OscPacket::Bundle(OscBundle {
         timetag: (0, 0).into(),
         content: vec![
@@ -365,7 +390,9 @@ fn bench_encode_messages(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_encode_messages_into_new(b: &mut Bencher) {
+fn bench_encode_messages_into_new_vec(b: &mut Bencher) {
+    // Encoded bundle contains 1000 messages, each of which has no arguments.
+    // The packet is encoded into a new Vec each time, resulting in a fresh allocation.
     let packet = OscPacket::Bundle(OscBundle {
         timetag: (0, 0).into(),
         content: vec![
@@ -381,7 +408,9 @@ fn bench_encode_messages_into_new(b: &mut Bencher) {
 }
 
 #[bench]
-fn bench_encode_messages_into_reuse(b: &mut Bencher) {
+fn bench_encode_messages_into_reused_vec(b: &mut Bencher) {
+    // Encoded bundle contains 1000 messages, each of which has no arguments.
+    // The packet is encoded into the same Vec each time, resulting in no allocation after the first.
     let packet = OscPacket::Bundle(OscBundle {
         timetag: (0, 0).into(),
         content: vec![
