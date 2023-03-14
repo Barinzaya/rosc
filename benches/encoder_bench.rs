@@ -428,3 +428,22 @@ fn bench_encode_messages_into_reused_vec(b: &mut Bencher) {
         rosc::encoder::encode_into(&packet, &mut buffer).unwrap()
     });
 }
+
+#[bench]
+fn bench_encode_nested_bundles(b: &mut Bencher) {
+    // Encoded bundle contains 1000 sub-bundles, each of which are empty.
+    let mut packet = OscPacket::Message(OscMessage {
+        addr: "/OSC/Nssted".into(),
+        args: vec![],
+    });
+
+    for _ in 0..25 {
+        packet = OscPacket::Bundle(OscBundle {
+            timetag: (0, 0).into(),
+            content: vec![packet],
+        });
+    }
+
+    b.iter(|| rosc::encoder::encode(&packet).unwrap());
+}
+
