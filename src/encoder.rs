@@ -79,21 +79,25 @@ fn encode_bundle<O: Output>(bundle: &OscBundle, out: &mut O) -> Result<usize, O:
     let mut written = encode_string_into("#bundle", out)?;
     written += encode_time_tag_into(&bundle.timetag, out)?;
 
+    let mut buf = Vec::new();
     for packet in &bundle.content {
         match *packet {
             OscPacket::Message(ref m) => {
-                let msg_len = encode_message(m, &mut NullOutput).unwrap();
-                out.reserve(4 + msg_len)?;
-                written += out.write(&(msg_len as u32).to_be_bytes())?;
-                written += encode_message(m, out)?;
+                encode_message(m, &mut buf).expect("Encoding message into Vec failed");
+
+                out.reserve(4 + buf.len())?;
+                written += out.write(&(buf.len() as u32).to_be_bytes())?;
+                written += out.write(&buf)?;
             }
             OscPacket::Bundle(ref b) => {
-                let bundle_len = encode_bundle(b, &mut NullOutput).unwrap();
-                out.reserve(4 + bundle_len)?;
-                written += out.write(&(bundle_len as u32).to_be_bytes())?;
-                written += encode_bundle(b, out)?;
+                encode_bundle(b, &mut buf).expect("Encoding bundle into Vec failed");
+
+                out.reserve(4 + buf.len())?;
+                written += out.write(&(buf.len() as u32).to_be_bytes())?;
+                written += out.write(&buf)?;
             }
         }
+        buf.clear();
     }
 
     Ok(written)
