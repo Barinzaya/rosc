@@ -437,7 +437,7 @@ fn bench_encode_nested_bundles(b: &mut Bencher) {
         args: vec![],
     });
 
-    for _ in 0..25 {
+    for _ in 0..20 {
         packet = OscPacket::Bundle(OscBundle {
             timetag: (0, 0).into(),
             content: vec![packet],
