@@ -34,7 +34,7 @@ pub fn encode(packet: &OscPacket) -> crate::types::Result<Vec<u8>> {
 /// NOTE: The OSC encoder will write output in small pieces
 /// (as small as a single byte), so the output should be
 /// buffered if write calls have a large overhead (e.g.
-/// writing to a file or a socket).
+/// writing to a file).
 ///
 /// # Example
 ///
@@ -79,25 +79,25 @@ fn encode_bundle<O: Output>(bundle: &OscBundle, out: &mut O) -> Result<usize, O:
     let mut written = encode_string_into("#bundle", out)?;
     written += encode_time_tag_into(&bundle.timetag, out)?;
 
-    let mut buf = Vec::new();
     for packet in &bundle.content {
         match *packet {
             OscPacket::Message(ref m) => {
-                encode_message(m, &mut buf).expect("Encoding message into Vec failed");
+                let length_mark = out.mark(4)?;
 
-                out.reserve(4 + buf.len())?;
-                written += out.write(&(buf.len() as u32).to_be_bytes())?;
-                written += out.write(&buf)?;
+                let length = encode_message(m, out)?;
+                out.place(length_mark, &(length as u32).to_be_bytes())?;
+
+                written += 4 + length;
             }
             OscPacket::Bundle(ref b) => {
-                encode_bundle(b, &mut buf).expect("Encoding bundle into Vec failed");
+                let length_mark = out.mark(4)?;
 
-                out.reserve(4 + buf.len())?;
-                written += out.write(&(buf.len() as u32).to_be_bytes())?;
-                written += out.write(&buf)?;
+                let length = encode_bundle(b, out)?;
+                out.place(length_mark, &(length as u32).to_be_bytes())?;
+
+                written += 4 + length;
             }
         }
-        buf.clear();
     }
 
     Ok(written)
@@ -234,23 +234,31 @@ fn test_pad() {
 /// (e.g. a file).
 ///
 /// Implementations are currently provided for this trait for:
+/// - `Vec<u8>`: Data will be appended to the end of the Vec.
 /// - `std::io::Write` (with feature `std`): Data will be
 ///   written to the output.
-/// - `Vec<u8>` (without feature `std`): Data will be
-///   appended to the end of the Vec.
-/// - `NullOutput`: Data is not written anywhere.
-///   Potentially useful for calculating the size of a
-///   packet without writing it anywhere.
 pub trait Output {
     /// The error type which is returned from Output functions.
     type Err;
 
-    /// Writes a block of data to the output. The size of
-    /// the data is return on success.
+    /// The type which should be used to indicate the location of a mark.
+    type Mark;
+
+    /// Writes a block of data to the output.
     ///
     /// Note that, unlike `std::io::Writo::write`, this
-    /// function is expected to write all of the given data.
+    /// function is expected to write all of the given data prior to returning.
     fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err>;
+
+    /// Marks the location of a fixed-length value and returns a `Self::Mark` which may be used to
+    /// fill in its data later with `place`.
+    fn mark(&mut self, size: usize) -> Result<Self::Mark, Self::Err>;
+
+    /// Consumes a previously-generated Mark and fills it in with data.
+    ///
+    /// This may result in a panic or in invalid data being written if `mark` came from a different
+    /// `Output`, or if the length of `data` does not match the size passed to `mark`.
+    fn place(&mut self, mark: Self::Mark, data: &[u8]) -> Result<(), Self::Err>;
 
     /// Reserves space in the output to write at least the
     /// given number of bytes.
@@ -264,9 +272,22 @@ pub trait Output {
     }
 }
 
-#[cfg(not(feature = "std"))]
 impl Output for Vec<u8> {
     type Err = core::convert::Infallible;
+    type Mark = (usize, usize);
+
+    fn mark(&mut self, size: usize) -> Result<Self::Mark, Self::Err> {
+        let start = self.len();
+        let end = start + size;
+
+        self.resize(end, 0);
+        Ok((start, end))
+    }
+
+    fn place(&mut self, (start, end): Self::Mark, data: &[u8]) -> Result<(), Self::Err> {
+        self[start..end].copy_from_slice(data);
+        Ok(())
+    }
 
     fn reserve(&mut self, size: usize) -> Result<(), Self::Err> {
         Vec::reserve(self, size);
@@ -280,27 +301,37 @@ impl Output for Vec<u8> {
 }
 
 #[cfg(feature = "std")]
-impl<W: std::io::Write> Output for W {
+pub struct WriteOutput<W>(W);
+
+#[cfg(feature = "std")]
+impl<W: std::io::Seek + std::io::Write> Output for WriteOutput<W> {
     type Err = std::io::Error;
+    type Mark = u64;
 
-    fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
-        std::io::Write::write_all(self, data).map(|_| data.len())
+    fn mark(&mut self, size: usize) -> Result<Self::Mark, Self::Err> {
+        let pos = self.0.stream_position()?;
+
+        let mut left = size;
+        while left > 0 {
+            let num = left.min(8);
+            self.0.write_all(&[0; 8][..num])?;
+            left -= num;
+        }
+
+        Ok(pos)
     }
-}
 
-/// An implementation of `Output` that does not write the
-/// data anywhere.
-///
-/// Intended for use as an `Output` to pre-calculate sizes
-/// without actually writing any data.
-#[derive(Clone, Copy, Debug)]
-pub struct NullOutput;
+    fn place(&mut self, pos: Self::Mark, data: &[u8]) -> Result<(), Self::Err> {
+        let old_pos = self.0.stream_position()?;
 
-impl Output for NullOutput {
-    type Err = core::convert::Infallible;
+        self.0.seek(std::io::SeekFrom::Start(pos))?;
+        self.0.write_all(data)?;
+        self.0.seek(std::io::SeekFrom::Start(old_pos))?;
 
-    #[inline(always)]
+        Ok(())
+    }
+
     fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
-        Ok(data.len())
+        std::io::Write::write_all(&mut self.0, data).map(|_| data.len())
     }
 }
