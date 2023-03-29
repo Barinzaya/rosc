@@ -112,10 +112,9 @@ fn encode_arg_data<O: Output>(arg: &OscType, out: &mut O) -> Result<usize, O::Er
         OscType::Char(x) => out.write(&(x as u32).to_be_bytes()),
         OscType::String(ref x) => encode_string_into(x, out),
         OscType::Blob(ref x) => {
-            let padded_blob_length: usize = pad(x.len() as u64) as usize;
+            let padded_blob_length = pad(x.len() as u64) as usize;
             let padding = padded_blob_length - x.len();
 
-            out.reserve(4 + padded_blob_length)?;
             out.write(&(x.len() as u32).to_be_bytes())?;
             out.write(x)?;
 
@@ -188,8 +187,6 @@ pub fn encode_string_into<S: AsRef<str>, O: Output>(s: S, out: &mut O) -> Result
     let s = s.as_ref();
 
     let padded_len = pad(s.len() as u64 + 1) as usize;
-    out.reserve(padded_len)?;
-
     let padding = padded_len - s.len();
     out.write(s.as_bytes())?;
     out.write(&[0u8; 4][..padding])?;
@@ -259,17 +256,6 @@ pub trait Output {
     /// This may result in a panic or in invalid data being written if `mark` came from a different
     /// `Output`, or if the length of `data` does not match the size passed to `mark`.
     fn place(&mut self, mark: Self::Mark, data: &[u8]) -> Result<(), Self::Err>;
-
-    /// Reserves space in the output to write at least the
-    /// given number of bytes.
-    ///
-    /// This is used as an optimization prior to writing
-    /// certain data loads, but should not be depended on
-    /// for correct output.
-    #[inline]
-    fn reserve(&mut self, _size: usize) -> Result<(), Self::Err> {
-        Ok(())
-    }
 }
 
 impl Output for Vec<u8> {
@@ -288,12 +274,6 @@ impl Output for Vec<u8> {
     #[inline]
     fn place(&mut self, (start, end): Self::Mark, data: &[u8]) -> Result<(), Self::Err> {
         self[start..end].copy_from_slice(data);
-        Ok(())
-    }
-
-    #[inline]
-    fn reserve(&mut self, size: usize) -> Result<(), Self::Err> {
-        Vec::reserve(self, size);
         Ok(())
     }
 
