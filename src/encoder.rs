@@ -266,7 +266,7 @@ pub trait Output {
     /// This is used as an optimization prior to writing
     /// certain data loads, but should not be depended on
     /// for correct output.
-    #[inline(always)]
+    #[inline]
     fn reserve(&mut self, _size: usize) -> Result<(), Self::Err> {
         Ok(())
     }
@@ -276,6 +276,7 @@ impl Output for Vec<u8> {
     type Err = core::convert::Infallible;
     type Mark = (usize, usize);
 
+    #[inline]
     fn mark(&mut self, size: usize) -> Result<Self::Mark, Self::Err> {
         let start = self.len();
         let end = start + size;
@@ -284,16 +285,19 @@ impl Output for Vec<u8> {
         Ok((start, end))
     }
 
+    #[inline]
     fn place(&mut self, (start, end): Self::Mark, data: &[u8]) -> Result<(), Self::Err> {
         self[start..end].copy_from_slice(data);
         Ok(())
     }
 
+    #[inline]
     fn reserve(&mut self, size: usize) -> Result<(), Self::Err> {
         Vec::reserve(self, size);
         Ok(())
     }
 
+    #[inline]
     fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
         self.extend(data);
         Ok(data.len())
@@ -331,6 +335,7 @@ impl<W: std::io::Seek + std::io::Write> Output for WriteOutput<W> {
         Ok(())
     }
 
+    #[inline]
     fn write(&mut self, data: &[u8]) -> Result<usize, Self::Err> {
         std::io::Write::write_all(&mut self.0, data).map(|_| data.len())
     }
