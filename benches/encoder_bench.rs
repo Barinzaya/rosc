@@ -446,4 +446,3 @@ fn bench_encode_nested_bundles(b: &mut Bencher) {
 
     b.iter(|| rosc::encoder::encode(&packet).unwrap());
 }
-

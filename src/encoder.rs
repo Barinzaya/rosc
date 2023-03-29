@@ -20,7 +20,10 @@ use crate::types::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 /// ```
 pub fn encode(packet: &OscPacket) -> crate::types::Result<Vec<u8>> {
     let mut bytes = Vec::new();
+
+    // NOTE: The Output implementation for Vec<u8> can't actually produce an error!
     encode_into(packet, &mut bytes).expect("Failed to write encoded packet into Vec");
+
     Ok(bytes)
 }
 
@@ -232,8 +235,9 @@ fn test_pad() {
 ///
 /// Implementations are currently provided for this trait for:
 /// - `Vec<u8>`: Data will be appended to the end of the Vec.
-/// - `std::io::Write` (with feature `std`): Data will be
-///   written to the output.
+/// - `WriteOutput<W>` (with feature `std`): A wrapper that
+///   allows data to be written to any type that implements
+///   `std::io::Seek + std::io::Write`.
 pub trait Output {
     /// The error type which is returned from Output functions.
     type Err;
@@ -284,8 +288,12 @@ impl Output for Vec<u8> {
     }
 }
 
+/// A newtype which can be used to wrap any type which
+/// implements `std::io::Seek` and `std::io::Write` to allow
+/// it to be used as an `Output`.
 #[cfg(feature = "std")]
-pub struct WriteOutput<W>(W);
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct WriteOutput<W>(pub W);
 
 #[cfg(feature = "std")]
 impl<W: std::io::Seek + std::io::Write> Output for WriteOutput<W> {
